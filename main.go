@@ -87,22 +87,26 @@ func (s *Product) GetDiscussionSection(sectionName string) (string, error) {
 	switch sectionName {
 	case "synopsis":
 		reTerm = "SYNOPSIS"
+	case "near term":
+		reTerm = "NEAR TERM"
+	case "short term":
+		reTerm = "SHORT TERM"
+	case "long term":
+		reTerm = "LONG TERM"
 	case "marine":
 		reTerm = "MARINE"
 	case "aviation":
 		reTerm = "AVIATION"
 	}
 
-	// TODO: Improve regex... not all sections end with "&&" and not all headers
-	// end with "..."
-	re := regexp.MustCompile(`(\.` + reTerm + `\.\.\.)\s?([^&&]*)`)
+	re := regexp.MustCompile(`(?is)\.` + reTerm + `[.\s]+(.+?)&&`)
 	result := re.FindStringSubmatch(s.ProductText)
 
-	if len(result) < 3 {
+	if len(result) < 2 {
 		return "", errors.New("No section of type " + sectionName + " found")
 	}
 
-	section := sanitizeString(result[2])
+	section := sanitizeString(result[1])
 	section = formatDiscussionItem(sectionName, section)
 	return section, nil
 }
@@ -203,12 +207,14 @@ func (s *NWSClient) GetProduct(productID string) (*Product, error) {
 // -----------------------------------------------------------------------------
 func sanitizeString(s string) string {
 	leadingTrailingWhitespaceRe := regexp.MustCompile(`^[\s\p{Zs}]+|[\s\p{Zs}]+$`)
-	insideWhitespaceRe := regexp.MustCompile(`[\s\p{Zs}]{2,}`)
-	newlineWhitespaceRe := regexp.MustCompile(`[\n\t\r]`)
+	multipleNewlineRe := regexp.MustCompile(`([^\n])(\n)([^\n])`)
+	multipleSpacesRe := regexp.MustCompile(`(?m) {2,}`)
+	tabRe := regexp.MustCompile(`[\t\r]`)
 
 	output := leadingTrailingWhitespaceRe.ReplaceAllString(s, "")
-	output = insideWhitespaceRe.ReplaceAllString(output, " ")
-	output = newlineWhitespaceRe.ReplaceAllString(output, "")
+	output = multipleNewlineRe.ReplaceAllString(output, "$1 ")
+	output = multipleSpacesRe.ReplaceAllString(output, "")
+	output = tabRe.ReplaceAllString(output, "")
 	return output
 }
 
