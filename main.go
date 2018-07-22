@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"regexp"
+	"strings"
 )
 
 func main() {
@@ -15,7 +17,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(afd.ProductText)
+
+	synopsis, err := afd.GetDiscussionSection("synopsis")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(synopsis)
 }
 
 // Response struct which contains multiple products
@@ -32,6 +39,29 @@ type Product struct {
 	ProductCode     string `json:"productCode"`
 	ProductName     string `json:"productName"`
 	ProductText     string `json:"productText"`
+}
+
+// GetDiscussionSection gets a section of the forecast discussion
+func (s *Product) GetDiscussionSection(sectionName string) (string, error) {
+	sectionName = strings.ToLower(sectionName)
+	switch sectionName {
+	case "synopsis":
+		return s.getSynopsis()
+	}
+	return "", errors.New("Invalid section name")
+}
+
+func (s *Product) getSynopsis() (string, error) {
+	synopsisRegex := regexp.MustCompile(`(\.SYNOPSIS\.\.\.)\s?([^&&]*)`)
+	result := synopsisRegex.FindStringSubmatch(s.ProductText)
+
+	if len(result) < 3 {
+		return "", errors.New("No synopsis found")
+	}
+
+	synopsis := sanitizeString(result[2])
+	synopsis = formatDiscussionItem("synopsis", synopsis)
+	return synopsis, nil
 }
 
 // NWSClient struct is a wrapper around the NWS API
@@ -123,4 +153,20 @@ func (s *NWSClient) GetProduct(productID string) (*Product, error) {
 		return nil, err
 	}
 	return &product, nil
+}
+
+// -----------------------------------------------------------------------------
+// HELPERS
+// -----------------------------------------------------------------------------
+func sanitizeString(s string) string {
+	leadingTrailingWhitespaceRe := regexp.MustCompile(`^[\s\p{Zs}]+|[\s\p{Zs}]+$`)
+	insideWhitespaceRe := regexp.MustCompile(`[\s\p{Zs}]{2,}`)
+
+	output := leadingTrailingWhitespaceRe.ReplaceAllString(s, "")
+	output = insideWhitespaceRe.ReplaceAllString(output, " ")
+	return output
+}
+
+func formatDiscussionItem(discussionType string, discussionItem string) string {
+	return strings.ToUpper(discussionType) + ":\n\n" + discussionItem
 }
