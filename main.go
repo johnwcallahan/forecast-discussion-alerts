@@ -44,24 +44,27 @@ type Product struct {
 // GetDiscussionSection gets a section of the forecast discussion
 func (s *Product) GetDiscussionSection(sectionName string) (string, error) {
 	sectionName = strings.ToLower(sectionName)
+	var reTerm string
 	switch sectionName {
 	case "synopsis":
-		return s.getSynopsis()
+		reTerm = "SYNOPSIS"
+	case "marine":
+		reTerm = "MARINE"
+	case "aviation":
+		reTerm = "AVIATION"
 	}
-	return "", errors.New("Invalid section name")
-}
-
-func (s *Product) getSynopsis() (string, error) {
-	synopsisRegex := regexp.MustCompile(`(\.SYNOPSIS\.\.\.)\s?([^&&]*)`)
-	result := synopsisRegex.FindStringSubmatch(s.ProductText)
+	// TODO: Improve regex... not all sections end with "&&" and not all headers
+	// end with "..."
+	re := regexp.MustCompile(`(\.` + reTerm + `\.\.\.)\s?([^&&]*)`)
+	result := re.FindStringSubmatch(s.ProductText)
 
 	if len(result) < 3 {
-		return "", errors.New("No synopsis found")
+		return "", errors.New("No section of type " + sectionName + " found")
 	}
 
-	synopsis := sanitizeString(result[2])
-	synopsis = formatDiscussionItem("synopsis", synopsis)
-	return synopsis, nil
+	section := sanitizeString(result[2])
+	section = formatDiscussionItem(sectionName, section)
+	return section, nil
 }
 
 // NWSClient struct is a wrapper around the NWS API
