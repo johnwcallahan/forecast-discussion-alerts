@@ -10,6 +10,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/sfreiberg/gotwilio"
 )
 
 // Users struct contains all users
@@ -23,12 +25,18 @@ type User struct {
 	FirstName     string   `json:"firstName"`
 	LastName      string   `json:"lastName"`
 	LocationID    string   `json:"locationId"`
-	Phone         int      `json:"phone"`
+	Phone         string   `json:"phone"`
 	Subscriptions []string `json:"subscriptions"`
 }
 
-// GetSubscribedSections gets all sections of the AFD that a user
-// has subscribed to
+// Config struct holds our config
+type Config struct {
+	TwillioAccountSID string `json:"twillioAccountSID"`
+	TwillioAuthToken  string `json:"twillioAuthToken"`
+	TwillioFromPhone  string `json:"twillioFromPhone"`
+}
+
+// GetSubscribedSections gets all sections of AFD that a user is subscribed to
 func (s User) GetSubscribedSections() []string {
 	client := NewNWSClient(s.LocationID)
 	afd, err := client.GetAFD()
@@ -58,10 +66,26 @@ func main() {
 	jsonParser := json.NewDecoder(usersFile)
 	jsonParser.Decode(&users)
 
-	user1 := users.Users[0]
+	var config Config
+	configFile, err := os.Open("config_dev.json")
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	jsonParser = json.NewDecoder(configFile)
+	jsonParser.Decode(&config)
 
-	discussionSections := user1.GetSubscribedSections()
-	fmt.Println(discussionSections)
+	twilio := gotwilio.NewTwilioClient(config.TwillioAccountSID, config.TwillioAuthToken)
+
+	for _, user := range users.Users {
+		discussionSections := user.GetSubscribedSections()
+		for _, section := range discussionSections {
+			_, _, err := twilio.SendSMS(config.TwillioFromPhone, user.Phone, section, "", "")
+			if err != nil {
+				fmt.Println("ERROR")
+				fmt.Println(err)
+			}
+		}
+	}
 }
 
 // Response struct which contains multiple products
@@ -83,23 +107,9 @@ type Product struct {
 // GetDiscussionSection gets a section of the forecast discussion
 func (s *Product) GetDiscussionSection(sectionName string) (string, error) {
 	sectionName = strings.ToLower(sectionName)
-	var reTerm string
-	switch sectionName {
-	case "synopsis":
-		reTerm = "SYNOPSIS"
-	case "near term":
-		reTerm = "NEAR TERM"
-	case "short term":
-		reTerm = "SHORT TERM"
-	case "long term":
-		reTerm = "LONG TERM"
-	case "marine":
-		reTerm = "MARINE"
-	case "aviation":
-		reTerm = "AVIATION"
-	}
 
-	re := regexp.MustCompile(`(?is)\.` + reTerm + `[.\s]+(.+?)&&`)
+	sectionName = strings.ToUpper(sectionName)
+	re := regexp.MustCompile(`(?is)\.` + sectionName + `[.\s]+(.+?)&&`)
 	result := re.FindStringSubmatch(s.ProductText)
 
 	if len(result) < 2 {
@@ -212,7 +222,7 @@ func sanitizeString(s string) string {
 	tabRe := regexp.MustCompile(`[\t\r]`)
 
 	output := leadingTrailingWhitespaceRe.ReplaceAllString(s, "")
-	output = multipleNewlineRe.ReplaceAllString(output, "$1 ")
+	output = multipleNewlineRe.ReplaceAllString(output, "$1$3")
 	output = multipleSpacesRe.ReplaceAllString(output, "")
 	output = tabRe.ReplaceAllString(output, "")
 	return output
