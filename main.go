@@ -7,22 +7,61 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 )
 
-func main() {
-	client := NewNWSClient("PHI")
+// Users struct contains all users
+type Users struct {
+	Users []User `json:"users"`
+}
+
+// User struct represents a user
+type User struct {
+	ID            int      `json:"id"`
+	FirstName     string   `json:"firstName"`
+	LastName      string   `json:"lastName"`
+	LocationID    string   `json:"locationId"`
+	Phone         int      `json:"phone"`
+	Subscriptions []string `json:"subscriptions"`
+}
+
+// GetSubscribedSections gets all sections of the AFD that a user
+// has subscribed to
+func (s User) GetSubscribedSections() []string {
+	client := NewNWSClient(s.LocationID)
 	afd, err := client.GetAFD()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	synopsis, err := afd.GetDiscussionSection("synopsis")
-	if err != nil {
-		log.Fatal(err)
+	sections := make([]string, len(s.Subscriptions))
+	for _, subscription := range s.Subscriptions {
+		section, err := afd.GetDiscussionSection(subscription)
+		if err != nil {
+			fmt.Println("Missing section")
+		}
+		sections = append(sections, section)
 	}
-	fmt.Println(synopsis)
+
+	return sections
+}
+
+func main() {
+	var users Users
+	usersFile, err := os.Open("users.json")
+	defer usersFile.Close()
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	jsonParser := json.NewDecoder(usersFile)
+	jsonParser.Decode(&users)
+
+	user1 := users.Users[0]
+
+	discussionSections := user1.GetSubscribedSections()
+	fmt.Println(discussionSections)
 }
 
 // Response struct which contains multiple products
@@ -53,6 +92,7 @@ func (s *Product) GetDiscussionSection(sectionName string) (string, error) {
 	case "aviation":
 		reTerm = "AVIATION"
 	}
+
 	// TODO: Improve regex... not all sections end with "&&" and not all headers
 	// end with "..."
 	re := regexp.MustCompile(`(\.` + reTerm + `\.\.\.)\s?([^&&]*)`)
@@ -164,9 +204,11 @@ func (s *NWSClient) GetProduct(productID string) (*Product, error) {
 func sanitizeString(s string) string {
 	leadingTrailingWhitespaceRe := regexp.MustCompile(`^[\s\p{Zs}]+|[\s\p{Zs}]+$`)
 	insideWhitespaceRe := regexp.MustCompile(`[\s\p{Zs}]{2,}`)
+	newlineWhitespaceRe := regexp.MustCompile(`[\n\t\r]`)
 
 	output := leadingTrailingWhitespaceRe.ReplaceAllString(s, "")
 	output = insideWhitespaceRe.ReplaceAllString(output, " ")
+	output = newlineWhitespaceRe.ReplaceAllString(output, "")
 	return output
 }
 
